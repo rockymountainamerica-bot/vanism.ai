@@ -20,7 +20,7 @@ export default function VanlifeAI() {
       const res = await fetch("/api/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next, system: "You are Vanlife.ai Copilot, an expert van life travel assistant." })
+        body: JSON.stringify({ messages: next, system: "You are Vanism.ai Copilot, an expert van life travel assistant." })
       });
       const data = await res.json();
       setChat(prev => [...prev, { role: "assistant", content: data.reply }]);
@@ -34,7 +34,7 @@ export default function VanlifeAI() {
     <div style={{ background: "#0C0D0B", minHeight: "100vh" }}>
       <div style={{ color: "#E8E2D4", fontFamily: "Georgia, serif", display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto", height: "100vh" }}>
         <div style={{ padding: "16px", borderBottom: "1px solid #252820", background: "#131410" }}>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Vanlife.ai</div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>Vanism.ai</div>
           <div style={{ fontSize: 10, color: "#7A9E7E", letterSpacing: "0.2em" }}>COPILOT ACTIVE</div>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
