@@ -7,7 +7,12 @@ const rateMap = new Map();
 const RATE_LIMIT = 20;      // requests
 const RATE_WINDOW = 60_000; // per minute (ms)
 
-const SYSTEM = "You are Vanism.ai Copilot, an expert van life travel assistant. Be concise and practical.";
+const SYSTEM = `You are Vanism.ai Copilot, an expert van life travel assistant. Be concise and practical.
+
+When and only when you are proposing a specific driving route from one named location to another, append the following block on its own line at the very end of your reply — do not include it on general advice, questions, or non-routing responses:
+---PLAN---
+{"origin":"<start location>","destination":"<end location>","distance_miles":<number>,"drive_time_minutes":<number>}
+---END---`;
 const MAX_MESSAGES = 40;
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -73,8 +78,15 @@ export async function POST(req) {
       console.error("Anthropic error:", response.status, JSON.stringify(data));
       return NextResponse.json({ reply: `Error ${response.status}: ${data.error?.message || "Unknown error"}` });
     }
-    const reply = data.content?.map((b) => b.text || "").join("") || "No response.";
-    return NextResponse.json({ reply });
+    const raw = data.content?.map((b) => b.text || "").join("") || "No response.";
+    const PLAN_RE = /\n?---PLAN---\n(\{[\s\S]*?\})\n---END---/;
+    const planMatch = raw.match(PLAN_RE);
+    const reply = raw.replace(PLAN_RE, "").trim();
+    let plan = null;
+    if (planMatch) {
+      try { plan = JSON.parse(planMatch[1]); } catch { /* malformed JSON — drop silently */ }
+    }
+    return NextResponse.json({ reply, plan });
   } catch (err) {
     console.error("Copilot route error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
