@@ -1,8 +1,50 @@
 import { NextResponse } from "next/server";
 
+// NOTE: In-memory rate limiting resets on every deploy and doesn't share state
+// across serverless instances. Fine for low pre-launch traffic, but must be
+// replaced with Upstash Rate Limit + KV before public launch.
+const rateMap = new Map();
+const RATE_LIMIT = 20;      // requests
+const RATE_WINDOW = 60_000; // per minute (ms)
+
+const SYSTEM = "You are Vanism.ai Copilot, an expert van life travel assistant. Be concise and practical.";
+const MAX_MESSAGES = 40;
+const MAX_MESSAGE_LENGTH = 2000;
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  const entry = rateMap.get(ip) ?? { count: 0, start: now };
+  if (now - entry.start > RATE_WINDOW) {
+    rateMap.set(ip, { count: 1, start: now });
+    return false;
+  }
+  if (entry.count >= RATE_LIMIT) return true;
+  entry.count++;
+  rateMap.set(ip, entry);
+  return false;
+}
+
 export async function POST(req) {
   try {
-    const { messages, system, resources } = await req.json();
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (isRateLimited(ip)) {
+      return NextResponse.json({ error: "Too many requests. Please slow down." }, { status: 429 });
+    }
+
+    const { messages, resources } = await req.json();
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return NextResponse.json({ error: "messages must be a non-empty array." }, { status: 400 });
+    }
+    if (messages.length > MAX_MESSAGES) {
+      return NextResponse.json({ error: `Conversation too long (max ${MAX_MESSAGES} messages).` }, { status: 400 });
+    }
+    for (const m of messages) {
+      if (typeof m.content !== "string" || m.content.length > MAX_MESSAGE_LENGTH) {
+        return NextResponse.json({ error: `Message content exceeds ${MAX_MESSAGE_LENGTH} character limit.` }, { status: 400 });
+      }
+    }
+
     const contextNote = resources
       ? `\n\n[Van resources: Water ${resources.water}%, Power ${resources.power}%, Fuel ${resources.fuel}%, Budget $${resources.budget} remaining]`
       : "";
@@ -22,7 +64,7 @@ export async function POST(req) {
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 1000,
-        system: system,
+        system: SYSTEM,
         messages: apiMessages,
       }),
     });
