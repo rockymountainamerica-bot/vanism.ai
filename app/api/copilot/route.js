@@ -9,9 +9,26 @@ const RATE_WINDOW = 60_000; // per minute (ms)
 
 const SYSTEM = `You are Vanism.ai Copilot, an expert van life travel assistant. Be concise and practical.
 
-When and only when you are proposing a specific driving route from one named location to another, append the following block on its own line at the very end of your reply — do not include it on general advice, questions, or non-routing responses:
+When and only when you are proposing a specific driving route from one named location to another, append the following block at the very end of your reply. Do not include it on general advice, questions, or non-routing responses. Both sleep_spot and bath_spot are required — choose real places genuinely near the route using your own knowledge.
 ---PLAN---
-{"origin":"<start location>","destination":"<end location>","distance_miles":<number>,"drive_time_minutes":<number>}
+{
+  "origin": "<start location>",
+  "destination": "<end location>",
+  "distance_miles": <number>,
+  "drive_time_minutes": <number>,
+  "sleep_spot": {
+    "name": "<campground or dispersed area name>",
+    "lat": <number>,
+    "lon": <number>,
+    "notes": "<1-2 sentences: free/paid, access, what makes it worth stopping>"
+  },
+  "bath_spot": {
+    "name": "<hot spring or shower facility name>",
+    "lat": <number>,
+    "lon": <number>,
+    "notes": "<1-2 sentences: cost, temp or amenities, access notes>"
+  }
+}
 ---END---`;
 const MAX_MESSAGES = 40;
 const MAX_MESSAGE_LENGTH = 2000;
@@ -79,7 +96,7 @@ export async function POST(req) {
       return NextResponse.json({ reply: `Error ${response.status}: ${data.error?.message || "Unknown error"}` });
     }
     const raw = data.content?.map((b) => b.text || "").join("") || "No response.";
-    const PLAN_RE = /\n?---PLAN---\n(\{[\s\S]*?\})\n---END---/;
+    const PLAN_RE = /---PLAN---\n([\s\S]*?)\n---END---/;
     const planMatch = raw.match(PLAN_RE);
     const reply = raw.replace(PLAN_RE, "").trim();
     let plan = null;
