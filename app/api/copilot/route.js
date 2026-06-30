@@ -1,55 +1,27 @@
 import { NextResponse } from "next/server";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
-// NOTE: In-memory rate limiting resets on every deploy and doesn't share state
-// across serverless instances. Fine for low pre-launch traffic, but must be
-// replaced with Upstash Rate Limit + KV before public launch.
-const rateMap = new Map();
-const RATE_LIMIT = 20;      // requests
-const RATE_WINDOW = 60_000; // per minute (ms)
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(20, "1 m"),
+  analytics: true,
+});
 
 const SYSTEM = `You are Vanism.ai Copilot, an expert van life travel assistant. Be concise and practical.
 
-When and only when you are proposing a specific driving route from one named location to another, append the following block at the very end of your reply. Do not include it on general advice, questions, or non-routing responses. Both sleep_spot and bath_spot are required — choose real places genuinely near the route using your own knowledge.
+When and only when you are proposing a specific driving route from one named location to another, append the following block at the very end of your reply. Do not include it on general advice, questions, or non-routing responses.
 ---PLAN---
-{
-  "origin": "<start location>",
-  "destination": "<end location>",
-  "distance_miles": <number>,
-  "drive_time_minutes": <number>,
-  "sleep_spot": {
-    "name": "<campground or dispersed area name>",
-    "lat": <number>,
-    "lon": <number>,
-    "notes": "<1-2 sentences: free/paid, access, what makes it worth stopping>"
-  },
-  "bath_spot": {
-    "name": "<hot spring or shower facility name>",
-    "lat": <number>,
-    "lon": <number>,
-    "notes": "<1-2 sentences: cost, temp or amenities, access notes>"
-  }
-}
+{"origin":"<start location>","destination":"<end location>","distance_miles":<number>,"drive_time_minutes":<number>}
 ---END---`;
 const MAX_MESSAGES = 40;
 const MAX_MESSAGE_LENGTH = 2000;
 
-function isRateLimited(ip) {
-  const now = Date.now();
-  const entry = rateMap.get(ip) ?? { count: 0, start: now };
-  if (now - entry.start > RATE_WINDOW) {
-    rateMap.set(ip, { count: 1, start: now });
-    return false;
-  }
-  if (entry.count >= RATE_LIMIT) return true;
-  entry.count++;
-  rateMap.set(ip, entry);
-  return false;
-}
-
 export async function POST(req) {
   try {
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-    if (isRateLimited(ip)) {
+    const { success } = await ratelimit.limit(ip);
+    if (!success) {
       return NextResponse.json({ error: "Too many requests. Please slow down." }, { status: 429 });
     }
 
@@ -85,7 +57,7 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 1000,
+        max_tokens: 1500,
         system: SYSTEM,
         messages: apiMessages,
       }),
@@ -101,7 +73,7 @@ export async function POST(req) {
     const reply = raw.replace(PLAN_RE, "").trim();
     let plan = null;
     if (planMatch) {
-      try { plan = JSON.parse(planMatch[1]); } catch { /* malformed JSON — drop silently */ }
+      try { plan = JSON.parse(planMatch[1]); } catch { /* malformed — drop silently */ }
     }
     return NextResponse.json({ reply, plan });
   } catch (err) {
